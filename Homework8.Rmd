@@ -1,0 +1,174 @@
+---
+title: "Homework 8"
+author: "Bird Smith"
+date: "2025-04-10"
+output: 
+    pdf_document: default
+    html_document: default
+---
+
+[Github Link](https://https://github.com/birds2000/Homework-8)
+
+```{r, include=FALSE}
+#Download necessary packages
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+library(MatchIt)
+library(tidyverse)
+library(dplyr)
+library(kableExtra)
+library(stringr)
+library(mosaic)
+```
+
+## Problem 1: Regression Warm Up
+
+```{r, include=FALSE}
+#Load the data set
+creatinine.data <- read.csv("~/Documents/SDS315/creatinine.csv")
+```
+
+```{r, echo=FALSE}
+creat.model <- lm(creatclear ~ age, data = creatinine.data)
+ans <- 147.8 - 0.62 * 55
+ans2 <- 147.8 - 0.62 * 40
+ans3 <- 147.8 - 0.62 * 60
+```
+
+A) The model is approximately creatclear = 147.8 - 0.62 * (age), where 147.8 is the intercept and -0.62 is the slope. 
+For a 55 year old, E(CC | Age = 55) = 147.8 - 0.62 * 55 = 113.7 mL/min.
+
+B) Creatinine clearance decreases by about 0.62 mL/minute for every one-year increase in age. The slope (-0.62) indicates how this relationship changes with time. 
+
+C) For a 40 year old, the predicted rate is 147.8 - 0.62 * 40 = 123. The actual value is 135, which is 135 - 123 = 12 below the prediction. For a 60 year old, the predicted rate is 147.8 - 0.62 * 60 = 110.6. The actual value is 112, which is 112 - 110.6 = 1.4 below the prediction. 
+
+Since 1.4 is "less below" the model prediction than 12, the 60-year-old with a rate of 110.6 has the healthier creatinine clearance rate. 
+
+
+## Problem 2: Modeling Disease Growth
+
+```{r, echo=FALSE}
+#Load the data set
+covid.data <- read.csv("~/Documents/SDS315/covid.csv")
+```
+
+```{r, echo=FALSE}
+#Separate the data sets
+italy.data <- covid.data[covid.data$country == "Italy", ]
+spain.data <- covid.data[covid.data$country == "Spain", ]
+
+italy.lm <- lm(log(deaths) ~ days_since_first_death, data = italy.data)
+spain.lm <- lm(log(deaths) ~ days_since_first_death, data = spain.data)
+
+italy.growth <- coef(italy.lm)[2]
+spain.growth <- coef(spain.lm)[2]
+
+italy.doubling <- log(2) / italy.growth
+spain.doubling <- log(2) / spain.growth
+
+#Bootstrap for Italy
+boot.italy <- do(10000) * {
+  samp <- resample(italy.data)
+  m <- lm(log(deaths) ~ days_since_first_death, data = samp)
+  slope <- coef(m)[2]
+  dt <- log(2) / slope
+  c(slope, dt)
+}
+
+#Extract numeric vectors from the bootstrap results
+italy.growth.values <- as.numeric(boot.italy[[1]])
+italy.dt.values <- as.numeric(boot.italy[[2]])
+
+#Calculate 95% confidence intervals for Italy (using quantile because confint would not work)
+italy.growth.CI <- quantile(italy.growth.values, probs = c(0.025, 0.975))
+italy.doub.CI   <- quantile(italy.dt.values, probs = c(0.025, 0.975))
+
+#Bootstrap for Spain
+boot.spain <- do(10000) * {
+  samp <- resample(spain.data)
+  m <- lm(log(deaths) ~ days_since_first_death, data = samp)
+  slope <- coef(m)[2]
+  dt <- log(2) / slope
+  c(slope, dt)
+}
+
+#Extract numeric vectors from the bootstrap results
+spain.growth.values <- as.numeric(boot.spain[[1]])
+spain.dt.values     <- as.numeric(boot.spain[[2]])
+
+#Calculate 95% confidence intervals for Spain
+spain.growth.CI <- quantile(spain.growth.values, probs = c(0.025, 0.975))
+spain.doub.CI   <- quantile(spain.dt.values, probs = c(0.025, 0.975))
+```
+
+```{r, echo=FALSE}
+#results, formatted nicely!
+results <- data.frame(
+  Metric = c("Italy Growth Rate", "Italy Doubling Time", 
+             "Spain Growth Rate", "Spain Doubling Time"),
+  Estimate = c(round(italy.growth, 3), round(italy.doubling, 1), 
+               round(spain.growth, 3), round(spain.doubling, 1)),
+  CI = c(
+    paste0("(", round(italy.growth.CI[1], 3), ", ", round(italy.growth.CI[2], 3), ")"),
+    paste0("(", round(italy.doub.CI[1], 1), ", ", round(italy.doub.CI[2], 1), ")"),
+    paste0("(", round(spain.growth.CI[1], 3), ", ", round(spain.growth.CI[2], 3), ")"),
+    paste0("(", round(spain.doub.CI[1], 1), ", ", round(spain.doub.CI[2], 1), ")")
+  )
+)
+
+kable(results, caption = "Estimated Growth Rates and Doubling Times with 95% Confidence Intervals")
+```
+
+
+```{r, echo=FALSE}
+#Graph
+plot(italy.data$days_since_first_death, italy.data$deaths, 
+     type="l", 
+     xlab="Days Since First Death", 
+     ylab="Daily COVID-19 Deaths",
+     ylim=c(0, max(c(italy.data$deaths, spain.data$deaths))))
+
+lines(spain.data$days_since_first_death, spain.data$deaths, col="red")
+
+legend("topleft", legend=c("Italy","Spain"), lty=1, col=c("black","red"))
+```
+
+
+## Problem 3: Price Elasticity of Demand
+
+```{r, echo=FALSE}
+#Load the data set
+milk.data <- read.csv("~/Documents/SDS315/milk.csv")
+```
+
+```{r, echo=FALSE} 
+#Power-law model: Q = K * P^beta
+#=> log(Q) = log(K) + beta * log(P)
+
+milk.lm <- lm(log(sales) ~ log(price), data = milk.data)
+beta.est <- coef(milk.lm)[2]
+
+boot.milk <- do(10000) * {
+  samp <- resample(milk.data)
+  m <- lm(log(sales) ~ log(price), data = samp)
+  coef(m)[2]  #extract the elasticity estimate (β)
+}
+
+boot_values <- boot.milk[[1]]  # or boot.milk[, 1]
+
+# Now compute the 95% confidence interval on the numeric vector
+milk.CI <- quantile(boot_values, probs = c(0.025, 0.975))
+
+# Optionally round for reporting
+milk.CI.round <- round(milk.CI, 3)
+milk_results <- data.frame(
+  Estimate = round(beta.est, 3),
+  `Lower Bound` = milk.CI.round[1],
+  `Upper Bound` = milk.CI.round[2]
+)
+rownames(milk_results) <- "Price Elasticity (beta)"
+
+kable(milk_results, caption = "95% Bootstrapped Confidence Interval for beta")
+``` 
+
+I fit a log-log regression of sales on price to estimate the exponent beta in the power law Q = KP^beta. I used bootstrap resampling by randomly sampling rows with replacement to compute the 95% confidence interval for beta. The slope in the regression of log(sales) on log(price) is the elasticity estimate. My results are: estimate = -1.619, interval = (-1.773, -1.454).
+
